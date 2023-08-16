@@ -1,25 +1,25 @@
 ﻿using ChessChallenge.API;
 using System;
 
-public class EvilBot : IChessBot {
+public class MyBot : IChessBot {
     //Value of pieces for taking and protecting.
     public enum PieceValues {
-        PAWN = 200,
-        BISHOP = 400,
-        KNIGHT = 300,
-        ROOK = 400,
-        QUEEN = 700,
+        PAWN = 100,
+        BISHOP = 200,
+        KNIGHT = 150,
+        ROOK = 200,
+        QUEEN = 400,
         KING = 800
     }
 
     //Cost of moving a piece, to discourage moving high value pieces.
     public enum MoveCost {
-        PAWN = 50,
-        BISHOP = 100,
-        KNIGHT = 85,
-        ROOK = 100,
-        QUEEN = 200,
-        KING = 450
+        PAWN = 25,
+        BISHOP = 50,
+        KNIGHT = 38,
+        ROOK = 50,
+        QUEEN = 100,
+        KING = 200
     }
 
     //Interest level of a move adds additional levels of recursion to a move
@@ -31,14 +31,15 @@ public class EvilBot : IChessBot {
     }
 
     //Scores awarded for various states of the game.
-    const int checkValue = 150;
+    const int checkValue = 100;
     const int checkMateValue = 10000000;
+    const int potentialCheckmateValue = 200;
     const int drawValue = -20000000;
 
     //Bonuses given to special moves.
-    const int promotionBonus = 500;
-    const int enPassantBonus = 300;
-    const int castleBonus = 200;
+    const int promotionBonus = 100;
+    const int enPassantBonus = 100;
+    const int castleBonus = 75;
 
     //Base level of recursion to use when evaluating a move.
     const int baseMoveDepth = 3;
@@ -46,9 +47,9 @@ public class EvilBot : IChessBot {
     //Whether its the players turn or not.
     static bool isMyTurn;
     //Multiplier that sets preference to protecting pieces on the players turn.
-    const float myPieceMultiplier = 3.5f;
+    const float myPieceMultiplier = 1.4f;
     //Multiplier that is added to weight the enemies move higher than the players move
-    const float enemyTurnMultiplier = 1.25f;
+    const float enemyTurnMultiplier = 1f;
 
     //An evaluated move with a score, a level of interest and an assigned move
     public struct EvaluatedMove {
@@ -77,7 +78,7 @@ public class EvilBot : IChessBot {
         //Get the highest scoring move from all the evaluated moves, this will (hopefully) be the optimal move
         EvaluatedMove bestMove = GetBestMove(evaluatedMoves);
 
-        //Console.WriteLine($"Best move score: {bestMove.score}");
+        Console.WriteLine($"Best move score: {bestMove.score}");
         return bestMove.move;
     }
 
@@ -124,23 +125,23 @@ public class EvilBot : IChessBot {
 
                 case PieceType.Pawn:
                     evalMove.interest = Interest.LOW;
-                    score += PieceMultipler((int)PieceValues.PAWN);
+                    score += EvaluatePieceValue((int)PieceValues.PAWN);
                     break;
                 case PieceType.Bishop:
                     evalMove.interest = Interest.MEDIUM;
-                    score += PieceMultipler((int)PieceValues.BISHOP);
+                    score += EvaluatePieceValue((int)PieceValues.BISHOP);
                     break;
                 case PieceType.Knight:
                     evalMove.interest = Interest.MEDIUM;
-                    score += PieceMultipler((int)PieceValues.KNIGHT);
+                    score += EvaluatePieceValue((int)PieceValues.KNIGHT);
                     break;
                 case PieceType.Rook:
                     evalMove.interest = Interest.MEDIUM;
-                    score += PieceMultipler((int)PieceValues.ROOK);
+                    score += EvaluatePieceValue((int)PieceValues.ROOK);
                     break;
                 case PieceType.Queen:
                     evalMove.interest = Interest.MEDIUM;
-                    score += PieceMultipler((int)PieceValues.QUEEN);
+                    score += EvaluatePieceValue((int)PieceValues.QUEEN);
                     break;
                 default:
                     evalMove.interest = Interest.NONE;
@@ -177,6 +178,7 @@ public class EvilBot : IChessBot {
         //================================================
         //Checks next move to see if its advantagous
         board.MakeMove(move);
+        isMyTurn = !isMyTurn;
 
         if (board.IsInCheck()) {
             evalMove.interest = Interest.HIGH;
@@ -184,12 +186,17 @@ public class EvilBot : IChessBot {
         }
 
         if (board.IsInCheckmate()) {
-            score += checkMateValue;
+            if (currentDepth == 1)
+                score += checkMateValue;
+            else
+                score += 200;
         }
 
-        if (board.IsDraw())
+        if (board.IsDraw()) {
             score += drawValue;
+        }
 
+        isMyTurn = !isMyTurn;
         board.UndoMove(move);
         //================================================
 
@@ -206,10 +213,8 @@ public class EvilBot : IChessBot {
         //===============================================
 
         //Moves that are made from the other player are negative, and are retracted from a moves scoring
-        if (isMyTurn)
-            evalMove.score += (int)(score / currentDepth * TurnMultipler());
-        else
-            evalMove.score += (int)((score * currentDepth) * TurnMultipler());
+        evalMove.score /= currentDepth;
+        evalMove.score += (int)(score * TurnMultipler());
 
         //Bonus depth is added depending on how interesting that move was + time must be above 5 seconds to prevent timeout
         int depthToExplore = currentDepth == 1 && timer.MillisecondsRemaining > 5000 ? recursiveDepth + (int)evalMove.interest : recursiveDepth;
@@ -241,9 +246,9 @@ public class EvilBot : IChessBot {
     }
 
     //Multplier that prioritises protecting high value pieces over taking pieces.
-    static int PieceMultipler(int pieceValue) {
+    static int EvaluatePieceValue(int pieceValue) {
         if (isMyTurn)
-            return 1;
+            return pieceValue;
         else
             return (int)(myPieceMultiplier * pieceValue);
     }

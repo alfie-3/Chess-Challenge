@@ -4,7 +4,7 @@ using System.Numerics;
 using System.Collections.Generic;
 using System.Linq;
 
-public class MyBot : IChessBot {
+public class EvilBot : IChessBot {
     //Consts.
     private const int EVALUATION_RECURSIVE_DEPTH = 3;//This is how many moves ahead the bot will think about.
                                                      //The consts after this line are values of a move based on the state of the board after that move 
@@ -60,7 +60,7 @@ public class MyBot : IChessBot {
         //DEBUG
         if (highestValueLastTime != highestValue) {
             highestValueLastTime = highestValue;
-            ChessChallenge.Application.ConsoleHelper.Log("HighestValue: " + highestValue.ToString());
+            //ChessChallenge.Application.ConsoleHelper.Log("HighestValue: " + highestValue.ToString());
         }
 
         //Return the move to make.
