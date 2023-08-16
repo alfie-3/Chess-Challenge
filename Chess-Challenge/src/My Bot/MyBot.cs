@@ -19,7 +19,7 @@ public class MyBot : IChessBot {
         KNIGHT = 38,
         ROOK = 50,
         QUEEN = 100,
-        KING = 200
+        KING = 150
     }
 
     //Interest level of a move adds additional levels of recursion to a move
@@ -32,9 +32,9 @@ public class MyBot : IChessBot {
 
     //Scores awarded for various states of the game.
     const int checkValue = 100;
-    const int checkMateValue = 10000000;
-    const int potentialCheckmateValue = 200;
-    const int drawValue = -20000000;
+    const int checkMateValue = 1000000;
+    const int potentialCheckmateValue = 400;
+    const int drawValue = -10000000;
 
     //Bonuses given to special moves.
     const int promotionBonus = 100;
@@ -189,7 +189,7 @@ public class MyBot : IChessBot {
             if (currentDepth == 1)
                 score += checkMateValue;
             else
-                score += 200;
+                score += potentialCheckmateValue;
         }
 
         if (board.IsDraw()) {
