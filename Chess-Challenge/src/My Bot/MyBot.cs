@@ -46,6 +46,8 @@ public class MyBot : IChessBot {
 
     //Whether its the players turn or not.
     static bool isMyTurn;
+    //If the turn is white, so it can be checked if the player is black or white
+    static bool isWhite;
     //Multiplier that sets preference to protecting pieces on the players turn.
     const float myPieceMultiplier = 1.4f;
     //Multiplier that is added to weight the enemies move higher than the players move
@@ -70,6 +72,7 @@ public class MyBot : IChessBot {
     public Move Think(Board board, Timer timer) {
         //Upon begining to think it should be the players turn.
         isMyTurn = true;
+        isWhite = board.IsWhiteToMove;
 
         //Get All Moves
         Move[] moves = board.GetLegalMoves();
@@ -78,7 +81,8 @@ public class MyBot : IChessBot {
         //Get the highest scoring move from all the evaluated moves, this will (hopefully) be the optimal move
         EvaluatedMove bestMove = GetBestMove(evaluatedMoves);
 
-        Console.WriteLine($"Best move score: {bestMove.score}");
+        //Console.WriteLine($"Best move score: {bestMove.score}");
+        Console.WriteLine(CalculateLeverage(board));
         return bestMove.move;
     }
 
@@ -251,5 +255,51 @@ public class MyBot : IChessBot {
             return pieceValue;
         else
             return (int)(myPieceMultiplier * pieceValue);
+    }
+
+    static float CalculateLeverage(Board board) {
+        PieceList[] pieceLists = board.GetAllPieceLists();
+        int whitePiecesValue = 1;
+        int blackPiecesValue = 1;
+
+        foreach (PieceList pieceList in pieceLists) {
+            if (pieceList.IsWhitePieceList)
+                whitePiecesValue = CalculatePieceListValue(pieceList);
+            else
+                blackPiecesValue = CalculatePieceListValue(pieceList);
+        }
+
+        if (isWhite) 
+            return whitePiecesValue / blackPiecesValue;
+        else
+            return blackPiecesValue / whitePiecesValue;
+    }
+
+    static int CalculatePieceListValue(PieceList pieceList) {
+        int pieceListValue = 1;
+
+        for (int i = 0; i < pieceList.Count; i++) {
+            switch (pieceList.GetPiece(i).PieceType) {
+                case PieceType.Pawn:
+                    pieceListValue += (int)PieceValues.PAWN;
+                    break;
+                case PieceType.Bishop:
+                    pieceListValue += (int)PieceValues.BISHOP;
+                    break;
+                case PieceType.Knight:
+                    pieceListValue += (int)PieceValues.KNIGHT;
+                    break;
+                case PieceType.Rook:
+                    pieceListValue += (int)PieceValues.ROOK;
+                    break;
+                case PieceType.Queen:
+                    pieceListValue += (int)PieceValues.QUEEN;
+                    break;
+                case PieceType.King:
+                    break;
+            }
+        }
+
+        return pieceListValue;
     }
 }
