@@ -27,6 +27,7 @@
         public void AddPieceAtSquare(int square)
         {
             occupiedSquares[numPieces] = square;
+            occupiedSquares[numPieces] = square;
             map[square] = numPieces;
             numPieces++;
         }
