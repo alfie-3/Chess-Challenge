@@ -2,11 +2,13 @@
 using System;
 
 public class MyBot : IChessBot {
+    //Value of pieces for taking and protecting.
     //Value of pieces for taking and protecting - None, Pawn, Knight, Bishop, Rook, King, Queen.
     static public int[] pieceValues = { 0, 110, 150, 275, 275, 400, 1500 };
 
     //Cost of moving a piece, to discourage moving high value pieces - None, Pawn, Knight, Bishop, Rook, King, Queen.
     static public int[] pieceMoveCost = { 0, 25, 38, 50, 50, 200, 150 };
+
 
     //Interest level of a move adds additional levels of recursion to a move
     public enum Interest {
@@ -17,10 +19,10 @@ public class MyBot : IChessBot {
     }
 
     //Scores awarded for various states of the game.
-    const int checkValue = 150;
+    const int checkValue = 100;
     const int checkMateValue = 1000000;
-    const int potentialCheckmateValue = 300;
-    const int drawValue = -100000000;
+    const int potentialCheckmateValue = 400;
+    const int drawValue = -10000000;
 
     //Bonuses given to special moves.
     const int promotionBonus = 100;
@@ -32,18 +34,10 @@ public class MyBot : IChessBot {
 
     //Whether its the players turn or not.
     static bool isMyTurn;
-    //If the turn is white, so it can be checked if the player is black or white
-    static bool isWhite;
     //Multiplier that sets preference to protecting pieces on the players turn.
-    const float myPieceMultiplier = 1.3f;
-
-    //Clamps the leverage within a certain range so the results are not as extreme
-    const float leverageClamp = 1.25f;
-    //Bonus applied for achieving a higher leverage in a move (Should be multiplied by leverage)
-    const int leverageBonus = 100;
-
-    //How low a score can be before being discounted
-    const int scoreFloor = -1000;
+    const float myPieceMultiplier = 1.4f;
+    //Multiplier that is added to weight the enemies move higher than the players move
+    const float enemyTurnMultiplier = 1f;
 
     //An evaluated move with a score, a level of interest and an assigned move
     public struct EvaluatedMove {
@@ -62,25 +56,24 @@ public class MyBot : IChessBot {
     }
 
     public Move Think(Board board, Timer timer) {
-        //Upon begining to think it should be the players turn.d
+        //Upon begining to think it should be the players turn.
         isMyTurn = true;
-        isWhite = board.IsWhiteToMove;
 
         //Get All Moves
         Span<Move> moveSpan = stackalloc Move[500];
         board.GetLegalMovesNonAlloc(ref moveSpan);
 
         Span<EvaluatedMove> evaluatedMovesSpan = stackalloc EvaluatedMove[moveSpan.Length];
-        var evaluatedMoves = EvaluateMoves(moveSpan, board, timer, evaluatedMovesSpan);
+        var evaluatedMoves = EvaluateMoves(moveSpan, evaluatedMovesSpan, board, timer);
 
         //Get the highest scoring move from all the evaluated moves, this will (hopefully) be the optimal move
         EvaluatedMove bestMove = GetBestMove(evaluatedMoves);
 
-        Console.WriteLine($"Best move score: {bestMove.score} - Leverage: {CalculateLeverage(board)}");
+        Console.WriteLine($"Best move score: {bestMove.score}");
         return bestMove.move;
     }
 
-    public Span<EvaluatedMove> EvaluateMoves(Span<Move> moveSpan, Board board, Timer timer, Span<EvaluatedMove> evaluatedMovesSpan, int currentDepth = 1, int recursiveDepth = baseMoveDepth) {
+    public Span<EvaluatedMove> EvaluateMoves(Span<Move> moveSpan, Span<EvaluatedMove> evaluatedMovesSpan, Board board, Timer timer, int currentDepth = 1, int recursiveDepth = baseMoveDepth) {
         //Consider all legal moves, with current and max depth set, by default this is base depth
         for (int i = 0; i < evaluatedMovesSpan.Length; i++) {
             evaluatedMovesSpan[i] = EvaluateMove(moveSpan[i], board, timer, currentDepth, recursiveDepth);
@@ -89,20 +82,20 @@ public class MyBot : IChessBot {
         return evaluatedMovesSpan;
     }
 
-    public static EvaluatedMove GetBestMove(Span<EvaluatedMove> evaluatedMoves) {
+    public static EvaluatedMove GetBestMove(Span<EvaluatedMove> evaluatedMovesSpan) {
         //Chooses a random move, if no move is deemed better, this is the move that is made.
         Random rng = new();
-        EvaluatedMove bestMove = evaluatedMoves[rng.Next(evaluatedMoves.Length)];
+        EvaluatedMove bestMove = evaluatedMovesSpan[rng.Next(evaluatedMovesSpan.Length)];
 
         //Gets the best move
-        for (int i = 0; i < evaluatedMoves.Length; i++) {
+        for (int i = 0; i < evaluatedMovesSpan.Length; i++) {
             if (isMyTurn) {
-                if (evaluatedMoves[i].score > bestMove.score)
-                    bestMove = evaluatedMoves[i];
+                if (evaluatedMovesSpan[i].score > bestMove.score)
+                    bestMove = evaluatedMovesSpan[i];
             }
             else {
-                if (evaluatedMoves[i].score < bestMove.score)
-                    bestMove = evaluatedMoves[i];
+                if (evaluatedMovesSpan[i].score < bestMove.score)
+                    bestMove = evaluatedMovesSpan[i];
             }
         }
 
@@ -111,32 +104,19 @@ public class MyBot : IChessBot {
 
     public EvaluatedMove EvaluateMove(Move move, Board board, Timer timer, int currentDepth, int recursiveDepth = baseMoveDepth) {
         EvaluatedMove evalMove = new(move);
-        float score = 0;
+        int score = 0;
 
-        float evalStartLeverage = 0;
-        float evalEndLeverage = 0;
-
-        //===============================================
-        //Compares the board leverage at the start of the evaluation vs the end and applies a bonus if its above.
-        if (currentDepth == 1)
-            evalStartLeverage = CalculateLeverage(board);
-        else if (currentDepth == recursiveDepth)
-            evalEndLeverage = CalculateLeverage(board);
-
-        if (evalStartLeverage > evalEndLeverage) 
-            score += leverageBonus;
-        //===============================================
-
+        //================================================
         //If the move is a capture move, how valuable would the captured piece be?
         if (move.IsCapture) {
             score += EvaluatePieceValue(pieceValues[(int)move.CapturePieceType]);
         }
+        //================================================
 
+        //================================================
         //Each piece has a movement cost, to discourage throwing valuable pieces at the enemy
         score -= pieceMoveCost[(int)move.MovePieceType];
-
-        if (board.IsInCheck())
-            evalMove.interest = Interest.MEDIUM;
+        //================================================
 
         //================================================
         //Checks next move to see if its advantagous
@@ -149,27 +129,14 @@ public class MyBot : IChessBot {
         }
 
         if (board.IsInCheckmate()) {
-            if (currentDepth == 1) {
-                evalMove.score = checkMateValue;
-
-                isMyTurn = !isMyTurn;
-                board.UndoMove(move);
-                return evalMove;
-            }
-            else if (isMyTurn) {
-                score += potentialCheckmateValue / currentDepth;
-            }
-            else {
+            if (currentDepth == 1)
+                score += checkMateValue;
+            else
                 score += potentialCheckmateValue;
-            }
         }
 
         if (board.IsDraw()) {
-            evalMove.score = drawValue;
-
-            isMyTurn = !isMyTurn;
-            board.UndoMove(move);
-            return evalMove;
+            score += drawValue;
         }
 
         isMyTurn = !isMyTurn;
@@ -189,7 +156,8 @@ public class MyBot : IChessBot {
         //===============================================
 
         //Moves that are made from the other player are negative, and are retracted from a moves scoring
-        evalMove.score += (int)(score * TurnMultipler);
+        evalMove.score /= currentDepth;
+        evalMove.score += (int)(score * TurnMultipler());
 
         //Bonus depth is added depending on how interesting that move was + time must be above 5 seconds to prevent timeout
         int depthToExplore = currentDepth == 1 && timer.MillisecondsRemaining > 5000 ? recursiveDepth + (int)evalMove.interest : recursiveDepth;
@@ -205,7 +173,7 @@ public class MyBot : IChessBot {
             if (moveSpan.Length > 0) {
                 Span<EvaluatedMove> evaluatedMovesSpan = stackalloc EvaluatedMove[moveSpan.Length];
 
-                EvaluatedMove nextBestMove = GetBestMove(EvaluateMoves(moveSpan, board, timer, evaluatedMovesSpan, currentDepth + 1, depthToExplore));
+                EvaluatedMove nextBestMove = GetBestMove(EvaluateMoves(moveSpan, evaluatedMovesSpan, board, timer, currentDepth + 1, depthToExplore));
                 evalMove.score += nextBestMove.score;
             }
 
@@ -217,52 +185,18 @@ public class MyBot : IChessBot {
     }
 
     //When its the enemies turn the scores are flipped.
-    static float TurnMultipler => isMyTurn ? 1f : -1f;
+    static float TurnMultipler() {
+        if (isMyTurn)
+            return 1;
+        else
+            return -enemyTurnMultiplier;
+    }
 
     //Multplier that prioritises protecting high value pieces over taking pieces.
-    static float EvaluatePieceValue(int pieceValue) {
+    static int EvaluatePieceValue(int pieceValue) {
         if (isMyTurn)
             return pieceValue;
         else
-            return (myPieceMultiplier * pieceValue);
-    }
-
-    static float CalculateLeverage(Board board) {
-        PieceList[] pieceLists = board.GetAllPieceLists();
-        Span<PieceList> pieceListSpan = pieceLists;
-
-        int whitePiecesValue = 1;
-        int blackPiecesValue = 1;
-
-        foreach (PieceList pieceList in pieceListSpan) {
-            if (pieceList.IsWhitePieceList) {
-                whitePiecesValue += CalculatePieceListValue(pieceList);
-                continue;
-            }
-            else {
-                blackPiecesValue += CalculatePieceListValue(pieceList);
-                continue;
-            }
-        }
-
-        float leverage;
-
-        if (isWhite)
-            leverage = (float)whitePiecesValue / (float)blackPiecesValue;
-        else
-            leverage = (float)blackPiecesValue / (float)whitePiecesValue;
-
-        Math.Clamp(leverage, -leverageClamp, leverageClamp);
-        return leverage;
-    }
-
-    static int CalculatePieceListValue(PieceList pieceList) {
-        int pieceListValue = 1;
-
-        for (int i = 0; i < pieceList.Count; i++) {
-            pieceListValue += pieceValues[(int)pieceList.GetPiece(i).PieceType];
-        }
-
-        return pieceListValue;
+            return (int)(myPieceMultiplier * pieceValue);
     }
 }
