@@ -1,5 +1,6 @@
 ﻿using ChessChallenge.API;
 using System;
+using System.Numerics;
 
 public class MyBot : IChessBot {
     //Value of pieces for taking and protecting.
@@ -7,7 +8,7 @@ public class MyBot : IChessBot {
     static public int[] pieceValues = { 0, 110, 150, 275, 275, 400, 1500 };
 
     //Cost of moving a piece, to discourage moving high value pieces - None, Pawn, Knight, Bishop, Rook, King, Queen.
-    static public int[] pieceMoveCost = { 0, 25, 38, 50, 50, 200, 150 };
+    static public int[] pieceMoveCost = { 0, 25, 38, 50, 50, 100, 175 };
 
 
     //Interest level of a move adds additional levels of recursion to a move
@@ -21,7 +22,7 @@ public class MyBot : IChessBot {
     //Scores awarded for various states of the game.
     const int checkValue = 100;
     const int checkMateValue = 1000000;
-    const int potentialCheckmateValue = 400;
+    const int potentialCheckmateValue = 600;
     const int drawValue = -10000000;
 
     //Bonuses given to special moves.
@@ -29,13 +30,16 @@ public class MyBot : IChessBot {
     const int enPassantBonus = 100;
     const int castleBonus = 75;
 
+    //Rewards for tempting pieces into certain areas
+    const int closerToCentreBonus = 25;
+
     //Base level of recursion to use when evaluating a move.
     const int baseMoveDepth = 3;
 
     //Whether its the players turn or not.
     static bool isMyTurn;
     //Multiplier that sets preference to protecting pieces on the players turn.
-    const float myPieceMultiplier = 1.4f;
+    const float myPieceMultiplier = 1.3f;
     //Multiplier that is added to weight the enemies move higher than the players move
     const float enemyTurnMultiplier = 1f;
 
@@ -104,12 +108,20 @@ public class MyBot : IChessBot {
 
     public EvaluatedMove EvaluateMove(Move move, Board board, Timer timer, int currentDepth, int recursiveDepth = baseMoveDepth) {
         EvaluatedMove evalMove = new(move);
-        int score = 0;
+        float score = 0;
 
         //================================================
         //If the move is a capture move, how valuable would the captured piece be?
         if (move.IsCapture) {
             score += EvaluatePieceValue(pieceValues[(int)move.CapturePieceType]);
+        }
+        else {
+            if (move.MovePieceType == PieceType.Knight && SquareIsCloseToCenter(move.TargetSquare)) {
+                score += closerToCentreBonus;
+            }
+            else {
+                score -= closerToCentreBonus;
+            }
         }
         //================================================
 
@@ -123,17 +135,21 @@ public class MyBot : IChessBot {
         board.MakeMove(move);
         isMyTurn = !isMyTurn;
 
+        float checkingScore = 0;
+
         if (board.IsInCheck()) {
             evalMove.interest = Interest.HIGH;
-            score += checkValue;
+            checkingScore += checkValue;
         }
 
         if (board.IsInCheckmate()) {
             if (currentDepth == 1)
-                score += checkMateValue;
+                checkingScore += checkMateValue;
             else
-                score += potentialCheckmateValue;
+                checkingScore += potentialCheckmateValue;
         }
+
+        score += checkingScore;
 
         if (board.IsDraw()) {
             score += drawValue;
@@ -156,7 +172,7 @@ public class MyBot : IChessBot {
         //===============================================
 
         //Moves that are made from the other player are negative, and are retracted from a moves scoring
-        evalMove.score /= currentDepth;
+        //score /= (int)Math.Round((currentDepth / (double)2), MidpointRounding.AwayFromZero) * 2;
         evalMove.score += (int)(score * TurnMultipler());
 
         //Bonus depth is added depending on how interesting that move was + time must be above 5 seconds to prevent timeout
@@ -198,5 +214,13 @@ public class MyBot : IChessBot {
             return pieceValue;
         else
             return (int)(myPieceMultiplier * pieceValue);
+    }
+
+    private bool SquareIsCloseToCenter(Square square) {
+        if (square.File > 1 && square.File < 6 && square.Rank > 1 && square.Rank < 6) {
+            return true;
+        }
+
+        return false;
     }
 }
