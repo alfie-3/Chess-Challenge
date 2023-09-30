@@ -2,27 +2,31 @@
 using System;
 using System.Numerics;
 
+//===============================
+//Alfie Bot 4.0
+//===============================
+
 public class MyBot : IChessBot {
     //Value of pieces for taking and protecting.
     //Value of pieces for taking and protecting - None, Pawn, Knight, Bishop, Rook, King, Queen.
-    static public int[] pieceValues = { 0, 110, 150, 275, 275, 400, 1500 };
+    static public int[] pieceValues = { 0, 120, 175, 275, 275, 400, 1500 };
 
     //Cost of moving a piece, to discourage moving high value pieces - None, Pawn, Knight, Bishop, Rook, King, Queen.
-    static public int[] pieceMoveCost = { 0, 25, 38, 50, 50, 100, 175 };
+    static public int[] pieceMoveCost = { 0, 25, 40, 50, 50, 100, 175 };
 
 
     //Interest level of a move adds additional levels of recursion to a move
     public enum Interest {
         NONE = 0,
-        LOW = 0,
-        MEDIUM = 0,
-        HIGH = 2,
+        LOW = 1,
+        MEDIUM = 2,
+        HIGH = 3,
     }
 
     //Scores awarded for various states of the game.
-    const int checkValue = 100;
+    const int checkValue = 50;
     const int checkMateValue = 1000000;
-    const int potentialCheckmateValue = 600;
+    const int potentialCheckmateValue = 400;
     const int drawValue = -10000000;
 
     //Bonuses given to special moves.
@@ -35,13 +39,17 @@ public class MyBot : IChessBot {
 
     //Base level of recursion to use when evaluating a move.
     const int baseMoveDepth = 3;
+    const int maxMoveDepth = 6;
+    const int inspectFurtherThreshold = 300;
 
     //Whether its the players turn or not.
     static bool isMyTurn;
     //Multiplier that sets preference to protecting pieces on the players turn.
-    const float myPieceMultiplier = 1.3f;
+    const float myPieceMultiplier = 1.4f;
     //Multiplier that is added to weight the enemies move higher than the players move
     const float enemyTurnMultiplier = 1f;
+
+    static Random rng;
 
     //An evaluated move with a score, a level of interest and an assigned move
     public struct EvaluatedMove {
@@ -113,7 +121,8 @@ public class MyBot : IChessBot {
         //================================================
         //If the move is a capture move, how valuable would the captured piece be?
         if (move.IsCapture) {
-            score += EvaluatePieceValue(pieceValues[(int)move.CapturePieceType]);
+            score += EvaluatePieceValue(move.CapturePieceType);
+            evalMove.interest = GetPieceTakeInterest(move.CapturePieceType, currentDepth);
         }
         else {
             if (move.MovePieceType == PieceType.Knight && SquareIsCloseToCenter(move.TargetSquare)) {
@@ -123,6 +132,8 @@ public class MyBot : IChessBot {
                 score -= closerToCentreBonus;
             }
         }
+
+
         //================================================
 
         //================================================
@@ -138,15 +149,21 @@ public class MyBot : IChessBot {
         float checkingScore = 0;
 
         if (board.IsInCheck()) {
-            evalMove.interest = Interest.HIGH;
             checkingScore += checkValue;
+
+            if (RandomChanceToPass(40))
+                evalMove.interest = Interest.MEDIUM;
         }
 
         if (board.IsInCheckmate()) {
             if (currentDepth == 1)
                 checkingScore += checkMateValue;
-            else
+            else {
                 checkingScore += potentialCheckmateValue;
+            }
+
+            if (RandomChanceToPass(80))
+                evalMove.interest = Interest.MEDIUM;
         }
 
         score += checkingScore;
@@ -172,7 +189,6 @@ public class MyBot : IChessBot {
         //===============================================
 
         //Moves that are made from the other player are negative, and are retracted from a moves scoring
-        //score /= (int)Math.Round((currentDepth / (double)2), MidpointRounding.AwayFromZero) * 2;
         evalMove.score += (int)(score * TurnMultipler());
 
         //Bonus depth is added depending on how interesting that move was + time must be above 5 seconds to prevent timeout
@@ -209,18 +225,56 @@ public class MyBot : IChessBot {
     }
 
     //Multplier that prioritises protecting high value pieces over taking pieces.
-    static int EvaluatePieceValue(int pieceValue) {
+    static int EvaluatePieceValue(PieceType pieceType) {
+        int pieceValue = pieceValues[(int)pieceType];
+
         if (isMyTurn)
             return pieceValue;
         else
             return (int)(myPieceMultiplier * pieceValue);
     }
 
+    static Interest GetPieceTakeInterest(PieceType pieceType, int currentDepth) {
+        switch (pieceType) {
+            case PieceType.Rook:
+            case PieceType.Bishop:
+                if (RandomChanceToPass(50))
+                    return Interest.MEDIUM;
+                return Interest.NONE;
+
+            case PieceType.Queen:
+                if (RandomChanceToPass(80))
+                    return Interest.MEDIUM;
+                return Interest.NONE;
+
+            default:
+                return Interest.NONE;
+        }
+    }
+
+    //If square is closer to the center
     private bool SquareIsCloseToCenter(Square square) {
         if (square.File > 1 && square.File < 6 && square.Rank > 1 && square.Rank < 6) {
             return true;
         }
 
         return false;
+    }
+
+    private static bool RandomChanceToPass(int percentageChance) {
+        //Seed rng
+        if (rng == null) {
+            rng = new Random(((int)DateTime.UtcNow.Ticks));
+        }
+        int randomValue = rng.Next(100);
+        return randomValue < percentageChance;
+    }
+
+    private static int GetDepthDivision(int currentDepth) {
+        if (currentDepth%2 == 0) {
+            return currentDepth / 2;
+        }
+        else
+            return (currentDepth + 1) / 2;
     }
 }

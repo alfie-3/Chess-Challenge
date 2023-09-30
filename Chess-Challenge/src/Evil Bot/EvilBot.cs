@@ -4,39 +4,49 @@ using System.Numerics;
 using System.Collections.Generic;
 using System.Linq;
 
+//MiaBotv4.0
 public class EvilBot : IChessBot {
     //Consts.
-    private const int EVALUATION_RECURSIVE_DEPTH = 3;//This is how many moves ahead the bot will think about.
-                                                     //The consts after this line are values of a move based on the state of the board after that move 
-    private const int NO_ENEMY_CAPTURE_VALUE = -1000000; //When a move doesn't capture anything it is given this weight.
-    private const int ENEMY_CAPTURED_VALUE = 10000;
-    private const int CHECKMATE_VALUE = 1000000000;
-    private const int CHECK_VALUE = 100000;
-    private const int DRAW_VALUE = -100000;
-    //The consts after this line are values of a move based on if the move is a special move type.
-    private const int CASTLES_VALUE = 1000;
-    private const int ENPASSANT_VALUE = 1000;
-    private const int CAPTURE_VALUE = 500;
+    const int EVALUATION_RECURSIVE_DEPTH = 3;//This is how many moves ahead the bot will think about.
+                                             //The consts after this line are values of a move based on the state of the board after that move 
+    const int NO_ENEMY_CAPTURE_VALUE = -1000000; //When a move doesn't capture anything it is given this weight.
+    const int ENEMY_CAPTURED_MULTIPLIER = 10000;
+    const int CHECKMATE_VALUE = 1000000000;
+    const int CHECK_VALUE = 100000;
+    const int DRAW_VALUE = -100000;
     //The consts after this line are the weights added to each move when it doesn't
     //lead to a capture depending on the piece being moved.
-    private const int KING_MOVE_SCORE_WEIGHT = -1000;
-    private const int QUEEN_MOVE_SCORE_WEIGHT = 100;
-    private const int ROOK_MOVE_SCORE_WEIGHT = 200;
-    private const int BISHOP_MOVE_SCORE_WEIGHT = 200;
-    private const int KNIGHT_MOVE_SCORE_WEIGHT = 100;
-    private const int PAWN_MOVE_SCORE_WEIGHT = 1000;
+    const int KING_MOVE_SCORE_WEIGHT = -1000;
+    const int QUEEN_MOVE_SCORE_WEIGHT = 100;
+    const int ROOK_MOVE_SCORE_WEIGHT = 200;
+    const int BISHOP_MOVE_SCORE_WEIGHT = 200;
+    const int KNIGHT_MOVE_SCORE_WEIGHT = 100;
+    const int PAWN_MOVE_SCORE_WEIGHT = 1000;
 
     //Variables.
-    private Board m_board;
-    private int[] pieceValues = { 0, 100, 300, 300, 500, 900, 10000 };// Piece values: null, pawn, knight, bishop, rook, queen, king
-    private int BLACK_MULTIPLIER;
-    private int WHITE_MULTIPLIER;
-    private bool myBotIsWhite;
+    Board m_board;
+    int[] pieceValues = { 0, 100, 300, 300, 500, 900, 10000 };// Piece values: null, pawn, knight, bishop, rook, queen, king
+    int BLACK_MULTIPLIER;
+    int WHITE_MULTIPLIER;
+    bool myBotIsWhite;
+
+    //Static variables.
+    static Random rng;
+    const int MAX_TIMES_TO_RANDOMLY_GO_DEEPER = 10;
+    static int s_timesGoneDeeper = 0;
 
     //Debug variables.
-    private int highestValueLastTime;
+    int highestValueLastTime;
+    int chancesPassed;
+    int chancesFailed;
 
     public Move Think(Board board, Timer timer) {
+        s_timesGoneDeeper = 0;
+        //Seed rng
+        if (rng == null) {
+            rng = new Random(((int)DateTime.UtcNow.Ticks));
+        }
+
         //Cache the state of the board.
         m_board = board;
         myBotIsWhite = m_board.IsWhiteToMove;
@@ -45,7 +55,6 @@ public class EvilBot : IChessBot {
         Move[] moves = m_board.GetLegalMoves();
 
         //Evalulate each move and choose best one.
-        Random rng = new Random((int)System.DateTime.UtcNow.Ticks);
         Move bestMove = moves[rng.Next(moves.Length)];
         int highestValue = Evaluate(bestMove, EVALUATION_RECURSIVE_DEPTH);
         foreach (Move move in moves) {
@@ -61,6 +70,7 @@ public class EvilBot : IChessBot {
         if (highestValueLastTime != highestValue) {
             highestValueLastTime = highestValue;
             ChessChallenge.Application.ConsoleHelper.Log("HighestValue: " + highestValue.ToString());
+            ChessChallenge.Application.ConsoleHelper.Log("ChancesPassedd: " + chancesPassed.ToString() + " ChancesFailed: " + chancesFailed.ToString());
         }
 
         //Return the move to make.
@@ -113,18 +123,6 @@ public class EvilBot : IChessBot {
             return moveEvaluationScore;
         }
 
-        if (a_move.IsCastles) {
-            moveEvaluationScore += CASTLES_VALUE;
-        }
-
-        if (a_move.IsEnPassant) {
-            moveEvaluationScore += ENPASSANT_VALUE;
-        }
-
-        if (a_move.IsCapture) {
-            moveEvaluationScore += CAPTURE_VALUE;
-        }
-
         //Get the value of the whole board if the move is made.
         int valueOfBoardIfMoveIsMade = GetValueOfBoard(m_board);
         int netMoveScore = (valueOfBoardIfMoveIsMade - boardValueBeforeMove);
@@ -135,7 +133,12 @@ public class EvilBot : IChessBot {
             //Then give it more incentive to move certain pieces in that case.
             switch (movePieceType) {
                 case PieceType.King: {
-                        moveEvaluationScore += KING_MOVE_SCORE_WEIGHT;
+                        if (SquareIsCloseToCenter(a_move.TargetSquare)) {
+                            moveEvaluationScore += -KING_MOVE_SCORE_WEIGHT;
+                        }
+                        else {
+                            moveEvaluationScore += +KING_MOVE_SCORE_WEIGHT;
+                        }
                         break;
                     }
                 case PieceType.Queen: {
@@ -185,15 +188,20 @@ public class EvilBot : IChessBot {
             }
         }
         else {
+            //Mutliply the captured piece's value by the enemy captured multiplier.
+            moveEvaluationScore += ENEMY_CAPTURED_MULTIPLIER * capturedPieceValue;
 
-            if (currentTurnIsMyBot) {
-                moveEvaluationScore += ENEMY_CAPTURED_VALUE * capturedPieceValue;
+            //Since we captured a piece, decide randomly if it's worth checking one level deeper.
+            bool canGoDeeper = s_timesGoneDeeper < MAX_TIMES_TO_RANDOMLY_GO_DEEPER;
+            if (RandomChanceToPass(25) && canGoDeeper) {
+                currentDepth++;
+                s_timesGoneDeeper++;
+                //ChessChallenge.Application.ConsoleHelper.Log("Going to check 1 level deeper!!");
+                chancesPassed++;
             }
-            else {
-                //If the current turn isn't my bot I want the enemy captured value to be higher so mybot is discourage from making the move that allowed that to happen.
-                moveEvaluationScore += (ENEMY_CAPTURED_VALUE * capturedPieceValue * 10);
+            else if (canGoDeeper) {
+                chancesFailed++;
             }
-
         }
 
         if (currentDepth > 0) {
@@ -252,5 +260,14 @@ public class EvilBot : IChessBot {
         }
 
         return false;//Square is not an end rank.
+    }
+
+    private bool RandomChanceToPass(int a_percentageChance) {
+        int randomValue = rng.Next(100);
+        return randomValue < a_percentageChance;
+    }
+
+    public static float InverseLerp(float a, float b, float value) {
+        return (value - a) / (b - a);
     }
 }
