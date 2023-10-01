@@ -2,7 +2,7 @@
 using System;
 
 //===============================
-//Alfie Bot 4.0
+//Alfie Bot 4.2.0
 //===============================
 
 public class MyBot : IChessBot {
